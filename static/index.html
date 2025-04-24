@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Cyber Task Manager</title>
+    <style>
+        :root {
+            --primary-color: #6c5ce7;
+            --success-color: #00b894;
+            --danger-color: #ff7675;
+            --background: linear-gradient(45deg, #1a1a1a, #2d3436);
+            --text-color: #ffffff;
+            --neon-shadow: 0 0 15px rgba(108, 92, 231, 0.5);
+        }
+
+        body {
+            font-family: 'Poppins', Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+            background: var(--background);
+            color: var(--text-color);
+            min-height: 100vh;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 3rem;
+            position: relative;
+        }
+
+        .header h1 {
+            font-size: 3rem;
+            text-shadow: var(--neon-shadow);
+            animation: glow 2s ease-in-out infinite alternate;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 3rem;
+            position: relative;
+        }
+
+        input {
+            flex: 1;
+            padding: 1rem;
+            border: 2px solid transparent;
+            border-radius: 10px;
+            font-size: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            transition: all 0.3s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: var(--neon-shadow);
+        }
+
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        button {
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .add-btn {
+            background: var(--primary-color);
+            color: white;
+            box-shadow: var(--neon-shadow);
+        }
+
+        .add-btn:hover {
+            transform: translateY(-2px) scale(1.05);
+            box-shadow: 0 0 25px rgba(108, 92, 231, 0.8);
+        }
+
+        .task {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 1.5rem;
+            border-radius: 15px;
+            margin-bottom: 1.5rem;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .task:hover {
+            transform: translateY(-5px) rotateZ(1deg);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .task::before {
+            content: '';
+            position: absolute;
+            top: -2px;
+            left: -2px;
+            right: -2px;
+            bottom: -2px;
+            background: linear-gradient(45deg, 
+                var(--primary-color), 
+                var(--success-color));
+            z-index: -1;
+            border-radius: 15px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .task:hover::before {
+            opacity: 0.3;
+        }
+
+        .task h3 {
+            margin: 0 0 0.5rem 0;
+            color: var(--primary-color);
+            font-size: 1.5rem;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(5px);
+        }
+
+        .status.pending {
+            background: rgba(255, 224, 138, 0.2);
+            color: #ffe08a;
+            border: 1px solid #ffe08a;
+        }
+
+        .status.completed {
+            background: rgba(195, 230, 203, 0.2);
+            color: #c3e6cb;
+            border: 1px solid #c3e6cb;
+        }
+
+        .complete-btn {
+            background: var(--success-color);
+            color: white;
+            margin-top: 1rem;
+            transition: transform 0.3s ease;
+        }
+
+        .complete-btn:hover {
+            transform: scale(1.1) rotate(5deg);
+        }
+
+        @keyframes glow {
+            from { text-shadow: 0 0 10px var(--primary-color); }
+            to { text-shadow: 0 0 20px var(--primary-color), 
+                            0 0 30px var(--primary-color); }
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        #tasks {
+            animation: fadeIn 0.5s ease;
+        }
+
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: var(--primary-color);
+            animation: confetti-fall 3s linear;
+        }
+
+        @keyframes confetti-fall {
+            0% { transform: translateY(-100vh) rotate(0deg); }
+            100% { transform: translateY(100vh) rotate(360deg); }
+        }
+
+        .loading {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2rem;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.5; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
+            100% { opacity: 0.5; transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="particles" id="particles"></div>
+    <div class="loading">🌀</div>
+
+    <div class="header">
+        <h1>🚀 Cyber Task Manager</h1>
+    </div>
+
+    <div class="input-group">
+        <input id="taskName" placeholder="Enter futuristic task...">
+        <button class="add-btn" onclick="addTask()">🌌 Add Task</button>
+    </div>
+
+    <div id="tasks"></div>
+
+    <script>
+        // Particles animation
+        function createParticles() {
+            const particles = document.getElementById('particles');
+            for(let i = 0; i < 50; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'confetti';
+                particle.style.left = Math.random() * 100 + '%';
+                particle.style.animationDelay = Math.random() * 3 + 's';
+                particle.style.backgroundColor = 
+                    `hsl(${Math.random() * 360}, 70%, 60%)`;
+                particles.appendChild(particle);
+            }
+        }
+        createParticles();
+
+        async function loadTasks() {
+            document.querySelector('.loading').style.display = 'block';
+            
+            try {
+                const response = await fetch('/tasks');
+                const tasks = await response.json();
+                
+                const html = tasks.map(task => `
+                    <div class="task" style="animation-delay: ${Math.random() * 0.5}s">
+                        <h3>${task.name}</h3>
+                        <div class="status ${task.completed ? 'completed' : 'pending'}">
+                            ${task.completed ? '🚀 Completed' : '⏳ Pending'}
+                        </div>
+                        ${!task.completed ? 
+                            `<button class="complete-btn" onclick="completeTask(${task.id})">
+                                🎯 Complete
+                            </button>` : ''}
+                        <div class="task-id">🔖 ID: ${task.id}</div>
+                    </div>
+                `).join('');
+                
+                document.getElementById('tasks').innerHTML = html;
+            } catch (error) {
+                console.error('Error:', error);
+            } finally {
+                document.querySelector('.loading').style.display = 'none';
+            }
+        }
+
+        async function addTask() {
+            const nameInput = document.getElementById('taskName');
+            const name = nameInput.value.trim();
+            
+            if (name) {
+                // Add particle effect
+                for(let i = 0; i < 10; i++) {
+                    const confetti = document.createElement('div');
+                    confetti.className = 'confetti';
+                    confetti.style.left = Math.random() * 100 + '%';
+                    confetti.style.backgroundColor = 
+                        `hsl(${Math.random() * 360}, 70%, 60%)`;
+                    document.body.appendChild(confetti);
+                    setTimeout(() => confetti.remove(), 3000);
+                }
+
+                await fetch('/tasks', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                nameInput.value = '';
+                loadTasks();
+            }
+        }
+
+        async function completeTask(id) {
+            const btn = event.target;
+            btn.style.transform = 'scale(0.9) rotate(-10deg)';
+            await fetch(`/tasks/${id}`, { method: 'PUT' });
+            loadTasks();
+        }
+
+        setInterval(loadTasks, 2000);
+        loadTasks();
+    </script>
+</body>
+</html>
