@@ -25,7 +25,6 @@ public:
     Task(int id, const std::string& name) : id_{id}, name_{name} {}
 
     void execute() {
-        std::this_thread::sleep_for(std::chrono::seconds(1)); // to simulate work
         completed_ = true;
         std::cout << "Task '" << name_ << "' completed." << std::endl;
     }
