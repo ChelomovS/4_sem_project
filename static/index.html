@@ -132,13 +132,17 @@
     <div id="tasks"></div>
 
     <script>
+        // асинхронная функция для загрузки задач
         async function loadTasks() {
+            // отправка GET-запроса - ресурс /tasks
             const response = await fetch('/tasks');
+            // парсим JSON-ответ от сервера в массив задач
             const tasks = await response.json();
-            
+            // генерация HTML для всех задач
             const html = tasks.map(task => `
                 <div class="task">
-                    <h3>${task.name}</h3>
+                    <h3>${task.name}</h3> <!-- Отображение названия -->
+                    <!-- Блок статуса с динамическими классами -->
                     <div class="status ${task.completed ? 'completed' : 'pending'}">
                         ${task.completed ? '✅ Completed' : '⏳ Pending'}
                     </div>
@@ -146,18 +150,22 @@
                         `<button class="complete-btn" onclick="completeTask(${task.id})">
                             ✔️ Complete
                         </button>` : ''}
+                        <!-- Отображение ID задачи -->
                     <div class="task-id">ID: ${task.id}</div>
                 </div>
-            `).join('');
+            `).join(''); // объединение массива в одну строку
             
             document.getElementById('tasks').innerHTML = html;
         }
-
+        // функция добавления новой таски 
         async function addTask() {
+            // получение ввода
             const nameInput = document.getElementById('taskName');
+            // чистим пробелы и получение значения
             const name = nameInput.value.trim();
-            
+            // проверка на непустоту
             if (name) {
+                // POST-запрос для создания задачи
                 await fetch('/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -167,12 +175,13 @@
                 loadTasks();
             }
         }
-
+        // функция отметки задачи выполненной
         async function completeTask(id) {
+            // PUT-запрос для обновления задачи
             await fetch(`/tasks/${id}`, { method: 'PUT' });
             loadTasks();
         }
-
+        // обновление списка задач
         setInterval(loadTasks, 2000);
         loadTasks();
     </script>

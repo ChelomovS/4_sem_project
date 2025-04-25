@@ -8,10 +8,11 @@
 #include <sqlite3.h>
 #include <algorithm>
 #include <httplib.h>
+#include <shared_mutex>
 
 #include "nlohmann/json.hpp"
 
-using json = nlohmann::json;
+using json = nlohmann::json; // 
 using namespace httplib;
 
 class Task {
@@ -54,11 +55,13 @@ public:
     }
 
     Database(Database& other) = delete;
+
     Database& operator=(Database& other) = delete;
 
     Database(Database&& other) noexcept : db_{other.db_} {
         other.db_ = nullptr;
     }
+
     Database& operator=(Database&& other) noexcept {
         if (this == &other) {
             return *this;
@@ -73,36 +76,52 @@ public:
     }
 
     void create_table() {
+        // CREATE TABLE IF NOT EXISTS – создает таблицу, если она не существует
+        // tasks - имя таблицы
+        // PRIMARY KEY - основной ключ 
+        // name - название задачи 
+        // completed - статус - выполнена / невыполнена, INTEGER - 0/1 - аналог bool
         std::string sql = "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, completed INTEGER);";
         sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
     }
 
-    void add_task(const std::string& task_тame) {
-        std::string sql = "INSERT INTO tasks (name, completed) VALUES ('" + task_тame + "', 0);";
+    void add_task(const std::string& task_name) {
+        // INSERT INTO - вставка новой задачи 
+        // (name, completed) - список полей для инициализации 
+        // VALUES - значения для инициализации - строка имени и состояние "невыполнена"
+        std::string sql = "INSERT INTO tasks (name, completed) VALUES ('" + task_name + "', 0);";
         sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
     }
 
     void mark_task_completed(int task_id) {
+        // UPDATE – обновление базы 
+        // SET completed = 1 – выставляем значение completed 
+        // WHERE id - выбор записи в базе по id 
         std::string sql = "UPDATE tasks SET completed = 1 WHERE id = " + std::to_string(task_id) + ";";
         sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
     }
 
     std::vector<Task> get_tasks() {
         std::vector<Task> tasks; // used vector 
+        // хотии получить все задачи из базы и вернуть std::vector задач по значению
         const char* sql = "SELECT * FROM tasks;";
         sqlite3_stmt* stmt;
 
         if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
             while (sqlite3_step(stmt) == SQLITE_ROW) {
                 int id = sqlite3_column_int(stmt, 0);
+                // id - id из 0 столбца
                 const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+                // name - название задачи из 1 столбца
                 bool completed = sqlite3_column_int(stmt, 2);
+                // completed - состояние из 2 столбца базы данных
                 tasks.emplace_back(id, name);
                 if (completed) {
                     tasks.back().execute(); 
                     mark_task_completed(id);
                 }
             }
+            // завершение задачи
             sqlite3_finalize(stmt);
         }
         return tasks;
@@ -112,19 +131,22 @@ public:
 class TaskManager {
 private:
     Database& database_;
-
+    std::shared_mutex mtx_; 
 public:
     TaskManager(Database& database) : database_{database} {}
 
     void add_task(const std::string& name) {
+        std::unique_lock lock(mtx_); // уникальное владение
         database_.add_task(name);
     }
 
     void complete_task(int id) {
+        std::unique_lock lock(mtx_);  // уникальное владение 
         database_.mark_task_completed(id);
     }
 
     std::vector<Task> get_tasks() {
+        std::shared_lock lock(mtx_);  // разделяемое владение 
         return database_.get_tasks();
     }
 };
@@ -187,7 +209,6 @@ class WebInterface {
 private:
     TaskManager& manager_;
     Server svr_;
-    std::mutex mtx_; // для многопоточной безопасности 
 
 public:
     WebInterface(TaskManager& mgr) : manager_{mgr} {
@@ -201,32 +222,29 @@ public:
 
     void setup_routes() {
         // get all tasks
-        svr_.Get("/tasks", [&](const Request& req, Response& res) { // Лямба захватывает по ссылке и 
-            std::lock_guard<std::mutex> lock(mtx_);
+        svr_.Get("/tasks", [&](const Request& req, Response& res) { 
             auto tasks = manager_.get_tasks();
-            
-            json j;
+            // json используется для REST API для обмена данными 
+            json j; 
             for (auto&& task : tasks) {
                 j.push_back({
-                    {"id", task.get_id()},
-                    {"name", task.get_name()},
-                    {"completed", task.is_completed()}
-                });
+                    {"id", task.get_id()},              // добавляем id 
+                    {"name", task.get_name()},          // добавляем имя 
+                    {"completed", task.is_completed()}  // добавляем состояние задачи 
+                }); // push back добавляем элемент в json массив 
             }
-            res.set_content(j.dump(), "application/json");
+            res.set_content(j.dump(), "application/json"); // j.dump() - преобразует JSON обьект в строку 
         });
 
         // post task
         svr_.Post("/tasks", [&](const Request& req, Response& res) {
-            std::lock_guard<std::mutex> lock(mtx_);
-            auto j = json::parse(req.body);
+            auto j = json::parse(req.body); // json.parse(req.body) - парсит строку в JSON обьект 
             manager_.add_task(j["name"].get<std::string>());
             res.status = 201; // успешное создание
         });
 
         // complete task
         svr_.Put(R"(/tasks/(\d+))", [&](const Request& req, Response& res) {
-            std::lock_guard<std::mutex> lock(mtx_); // RAII обертка над std::mutex
             int id = std::stoi(req.matches[1]);
             manager_.complete_task(id);
             res.status = 200;
@@ -238,7 +256,8 @@ public:
 
 int main() {
     Database database("tasks.db");
-    TaskManager manager(database);
+    TaskManager manager(database); // гарантирует безопасность относительно многопоточного окружения 
+    // гарантирует безопасность относительно операций добавления, отметки выполнения, чтения списка задач
     
     WebInterface web(manager);
     // used new thread for web 
@@ -247,6 +266,8 @@ int main() {
     });
     
     UserInterface ui(manager);
+    // основная функция главного потока - управление консольным интерфейсом (ui.show_menu())
+    // общий ресурс двух потоков - база данных - файл tasks.db
     ui.show_menu();
     
     web_thread.join();
