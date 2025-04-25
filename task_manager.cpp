@@ -208,19 +208,19 @@ public:
 class WebInterface {
 private:
     TaskManager& manager_;
-    Server svr_;
+    Server svr_; // экзепмпляр веб-сервера, обрабатывает HTTP запросы 
 
 public:
     WebInterface(TaskManager& mgr) : manager_{mgr} {
         setup_routes();
     }
 
-    void run(int port = 8080) {
+    void run(int port = 8080) { // запускаем сервер на указанном порту 
         std::cout << "Server running on http://localhost:" << port << std::endl; // ссылка на веб интерфейс 
         svr_.listen("0.0.0.0", port);
     }
 
-    void setup_routes() {
+    void setup_routes() { // определяем маршруты 
         // get all tasks
         svr_.Get("/tasks", [&](const Request& req, Response& res) { 
             auto tasks = manager_.get_tasks();
@@ -240,17 +240,18 @@ public:
         svr_.Post("/tasks", [&](const Request& req, Response& res) {
             auto j = json::parse(req.body); // json.parse(req.body) - парсит строку в JSON обьект 
             manager_.add_task(j["name"].get<std::string>());
-            res.status = 201; // успешное создание
+            res.status = 201; // успешное создание ресурса 
         });
 
         // complete task
-        svr_.Put(R"(/tasks/(\d+))", [&](const Request& req, Response& res) {
+        svr_.Put(R"(/tasks/(\d+))", [&](const Request& req, Response& res) { // первый аргумент - регуляроное выражение 
+            // /tasks/123456 - пример - сопоставляется с URL
             int id = std::stoi(req.matches[1]);
             manager_.complete_task(id);
             res.status = 200;
         });
 
-        svr_.set_mount_point("/", "./static"); 
+        svr_.set_mount_point("/", "./static"); // статические файлы 
     }
 };
 
