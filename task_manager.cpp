@@ -195,13 +195,13 @@ public:
     }
 
     void run(int port = 8080) {
-        std::cout << "Server running on http://localhost:" << port << std::endl;
+        std::cout << "Server running on http://localhost:" << port << std::endl; // ссылка на веб интерфейс 
         svr_.listen("0.0.0.0", port);
     }
 
     void setup_routes() {
         // get all tasks
-        svr_.Get("/tasks", [&](const Request& req, Response& res) {
+        svr_.Get("/tasks", [&](const Request& req, Response& res) { // Лямба захватывает по ссылке и 
             std::lock_guard<std::mutex> lock(mtx_);
             auto tasks = manager_.get_tasks();
             
@@ -226,13 +226,13 @@ public:
 
         // complete task
         svr_.Put(R"(/tasks/(\d+))", [&](const Request& req, Response& res) {
-            std::lock_guard<std::mutex> lock(mtx_);
+            std::lock_guard<std::mutex> lock(mtx_); // RAII обертка над std::mutex
             int id = std::stoi(req.matches[1]);
             manager_.complete_task(id);
             res.status = 200;
         });
 
-        svr_.set_mount_point("/", "./static");
+        svr_.set_mount_point("/", "./static"); 
     }
 };
 
