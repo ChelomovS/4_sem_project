@@ -12,7 +12,7 @@
 
 #include "nlohmann/json.hpp"
 
-using json = nlohmann::json; // 
+using json = nlohmann::json; // реализация JSON
 using namespace httplib;
 
 class Task {
