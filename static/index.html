@@ -1,23 +1,24 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Task Manager</title>
-    <style> 
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Manager with Images</title>
+    <style>
         :root {
-            --primary-color: #4a90e2; /* Основной синий цвет */
-            --success-color: #50c878; /* Цвет успеха (зеленый) */
-            --background-color: #f5f7fa; /* Фоновый цвет страницы */
-            --text-color: #2d3436; /* Основной цвет текста */
+            --primary: #4a90e2;
+            --success: #50c878;
+            --background: #f5f7fa;
+            --text: #2d3436;
         }
 
         body {
-            font-family: 'Segoe UI', Arial, sans-serif;
+            font-family: 'Segoe UI', sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 2rem;
-            background-color: var(--background-color);
-            color: var(--text-color);
+            background: var(--background);
+            color: var(--text);
         }
 
         .header {
@@ -26,41 +27,52 @@
         }
 
         .input-group {
-            display: flex;
+            display: grid;
             gap: 1rem;
+            grid-template-columns: 1fr auto auto;
             margin-bottom: 2rem;
         }
 
-        input {
-            flex: 1;
+        input[type="text"] {
             padding: 0.8rem;
             border: 2px solid #ddd;
             border-radius: 8px;
             font-size: 1rem;
-            transition: border-color 0.3s ease;
         }
 
-        input:focus {
-            outline: none;
-            border-color: var(--primary-color);
+        .file-label {
+            display: flex;
+            align-items: center;
+            padding: 0.8rem 1.5rem;
+            background: #fff;
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .file-label:hover {
+            border-color: var(--primary);
+            background: #f8f9fa;
+        }
+
+        .file-input {
+            display: none;
         }
 
         button {
             padding: 0.8rem 1.5rem;
             border: none;
             border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-
-        .add-btn {
-            background-color: var(--primary-color);
+            background: var(--primary);
             color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
-        .add-btn:hover {
-            background-color: #357abd;
+        button:hover {
+            filter: brightness(0.9);
             transform: translateY(-1px);
         }
 
@@ -70,16 +82,13 @@
             border-radius: 12px;
             margin-bottom: 1rem;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            transition: transform 0.3s ease;
         }
 
-        .task:hover {
-            transform: translateY(-2px);
-        }
-
-        .task h3 {
-            margin: 0 0 0.5rem 0;
-            color: var(--primary-color);
+        .task img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            margin-top: 1rem;
         }
 
         .status {
@@ -87,103 +96,105 @@
             padding: 0.3rem 0.8rem;
             border-radius: 20px;
             font-size: 0.9rem;
+            margin: 0.5rem 0;
         }
 
-        .status.pending {
-            background-color: #ffe08a;
-            color: #946c00;
-        }
-
-        .status.completed {
-            background-color: #c3e6cb;
-            color: #155724;
-        }
-
-        .complete-btn {
-            background-color: var(--success-color);
-            color: white;
-            margin-top: 1rem;
-        }
-
-        .complete-btn:hover {
-            background-color: #3da35a;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        #tasks {
-            animation: fadeIn 0.5s ease;
-        }
+        .pending { background: #ffe08a; color: #946c00; }
+        .completed { background: #c3e6cb; color: #155724; }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>📝 Task Manager</h1>
+        <h1>📷 Task Manager</h1>
     </div>
 
     <div class="input-group">
-        <input id="taskName" placeholder="Enter task name...">
-        <button class="add-btn" onclick="addTask()">➕ Add Task</button> 
+        <input type="text" id="taskName" placeholder="Task name...">
+        <label class="file-label">
+            📁 Choose Image
+            <input type="file" id="taskImage" class="file-input" accept="image/*">
+        </label>
+        <button onclick="addTask()">➕ Add Task</button>
     </div>
 
     <div id="tasks"></div>
 
     <script>
-        // асинхронная функция для загрузки задач
         async function loadTasks() {
-            // отправка GET-запроса - ресурс /tasks
-            const response = await fetch('/tasks');
-            // парсим JSON-ответ от сервера в массив задач
-            const tasks = await response.json();
-            // генерация HTML для всех задач
-            const html = tasks.map(task => `
-                <div class="task">
-                    <h3>${task.name}</h3> <!-- Отображение названия -->
-                    <!-- Блок статуса с динамическими классами -->
-                    <div class="status ${task.completed ? 'completed' : 'pending'}">
-                        ${task.completed ? '✅ Completed' : '⏳ Pending'}
+            try {
+                const res = await fetch('/tasks');
+                const tasks = await res.json();
+                
+                const html = tasks.map(task => `
+                    <div class="task">
+                        <h3>${task.name}</h3>
+                        <div class="status ${task.completed ? 'completed' : 'pending'}">
+                            ${task.completed ? '✅ Completed' : '⏳ Pending'}
+                        </div>
+                        ${task.image_filename ? 
+                            `<img src="/uploads/${task.image_filename}" alt="Task image">` : ''}
+                        ${!task.completed ? 
+                            `<button onclick="completeTask(${task.id})">Complete</button>` : ''}
+                        <div>ID: ${task.id}</div>
                     </div>
-                    ${!task.completed ? 
-                        `<button class="complete-btn" onclick="completeTask(${task.id})">
-                            ✔️ Complete
-                        </button>` : ''}
-                        <!-- Отображение ID задачи -->
-                    <div class="task-id">ID: ${task.id}</div>
-                </div>
-            `).join(''); // объединение массива в одну строку
-            
-            document.getElementById('tasks').innerHTML = html;
+                `).join('');
+                
+                document.getElementById('tasks').innerHTML = html;
+            } catch (error) {
+                console.error('Error loading tasks:', error);
+            }
         }
-        // функция добавления новой таски 
+
         async function addTask() {
-            // получение ввода
-            const nameInput = document.getElementById('taskName');
-            // чистим пробелы и получение значения
-            const name = nameInput.value.trim();
-            // проверка на непустоту
-            if (name) {
-                // POST-запрос для создания задачи
+            const name = document.getElementById('taskName').value.trim();
+            const fileInput = document.getElementById('taskImage');
+            
+            if (!name) return;
+
+            let filename = '';
+            
+            try {
+                if (fileInput.files[0]) {
+                    const formData = new FormData();
+                    formData.append('image', fileInput.files[0]);
+                    
+                    const uploadRes = await fetch('/upload', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await uploadRes.json();
+                    filename = data.filename;
+                }
+
                 await fetch('/tasks', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name })
+                    body: JSON.stringify({
+                        name,
+                        image_filename: filename
+                    })
                 });
-                nameInput.value = '';
+
+                document.getElementById('taskName').value = '';
+                fileInput.value = '';
                 loadTasks();
+            } catch (error) {
+                console.error('Error adding task:', error);
             }
         }
-        // функция отметки задачи выполненной
+
         async function completeTask(id) {
-            // PUT-запрос для обновления задачи
-            await fetch(`/tasks/${id}`, { method: 'PUT' });
-            loadTasks();
+            try {
+                await fetch(`/tasks/${id}`, { method: 'PUT' });
+                loadTasks();
+            } catch (error) {
+                console.error('Error completing task:', error);
+            }
         }
-        // обновление списка задач
+
         setInterval(loadTasks, 2000);
         loadTasks();
     </script>
 </body>
-</html> 
+</html>

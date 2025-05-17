@@ -7,18 +7,22 @@
 #include <atomic>
 #include <sqlite3.h>
 #include <algorithm>
-#include <httplib.h>
+#include "httplib.h"
 #include <shared_mutex>
+#include <fstream>
+#include <filesystem>
 
-#include "nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 
-using json = nlohmann::json; // реализация JSON
+using json = nlohmann::json;
 using namespace httplib;
+namespace fs = std::filesystem;
 
 class Task {
 private:
     int id_;
     std::string name_;
+    std::string image_filename_;
     bool completed_ = false;
 
 public:
@@ -29,44 +33,38 @@ public:
         std::cout << "Task '" << name_ << "' completed." << std::endl;
     }
 
-    bool is_completed() const {
-        return completed_;
-    }
-
-    int get_id() const {
-        return id_;
-    }
-
-    std::string get_name() const {
-        return name_;
-    }
+    void set_image_filename(const std::string& filename) { image_filename_ = filename; }
+    
+    bool is_completed() const { return completed_; }
+    int get_id() const { return id_; }
+    std::string get_name() const { return name_; }
+    std::string get_image_filename() const { return image_filename_; }
 };
 
 class Database {
-    // RAII class - resource is database
 private:
     sqlite3* db_;
+
 public:
-    // Rule of 5
     Database(const std::string& database_name) {
         sqlite3_open(database_name.c_str(), &db_);
         create_table();
+        fs::create_directories("./static/uploads");
     }
 
-    Database(Database& other) = delete;
-
-    Database& operator=(Database& other) = delete;
+    Database(const Database&) = delete;
+    Database& operator=(const Database&) = delete;
 
     Database(Database&& other) noexcept : db_{other.db_} {
         other.db_ = nullptr;
     }
 
     Database& operator=(Database&& other) noexcept {
-        if (this == &other) {
-            return *this;
+        if (this != &other) {
+            sqlite3_close(db_);
+            db_ = other.db_;
+            other.db_ = nullptr;
         }
-
-        std::swap(db_, other.db_);
         return *this;
     }
 
@@ -75,52 +73,45 @@ public:
     }
 
     void create_table() {
-        // CREATE TABLE IF NOT EXISTS – создает таблицу, если она не существует
-        // tasks - имя таблицы
-        // PRIMARY KEY - основной ключ 
-        // name - название задачи 
-        // completed - статус - выполнена / невыполнена, INTEGER - 0/1 - аналог bool
-        std::string sql = "CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, completed INTEGER);";
+        const char* sql = 
+            "CREATE TABLE IF NOT EXISTS tasks ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "name TEXT NOT NULL, "
+            "completed INTEGER DEFAULT 0, "
+            "image_filename TEXT);";
+        sqlite3_exec(db_, sql, nullptr, nullptr, nullptr);
+    }
+
+    void add_task(const std::string& name, const std::string& image_filename = "") {
+        std::string sql = 
+            "INSERT INTO tasks (name, image_filename) VALUES ('" + 
+            name + "', '" + image_filename + "');";
         sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
     }
 
-    void add_task(const std::string& task_name) {
-        // INSERT INTO - вставка новой задачи 
-        // (name, completed) - список полей для инициализации 
-        // VALUES - значения для инициализации - строка имени и состояние "невыполнена"
-        std::string sql = "INSERT INTO tasks (name, completed) VALUES ('" + task_name + "', 0);";
-        sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
-    }
-
-    void mark_task_completed(int task_id) {
-        // UPDATE – обновление базы 
-        // SET completed = 1 – выставляем значение completed 
-        // WHERE id - выбор записи в базе по id 
-        std::string sql = "UPDATE tasks SET completed = 1 WHERE id = " + std::to_string(task_id) + ";";
+    void mark_task_completed(int id) {
+        std::string sql = 
+            "UPDATE tasks SET completed = 1 WHERE id = " + std::to_string(id) + ";";
         sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, nullptr);
     }
 
     std::vector<Task> get_tasks() {
-        std::vector<Task> tasks; // used vector 
-        // хотии получить все задачи из базы и вернуть std::vector задач по значению
-        const char* sql = "SELECT * FROM tasks;";
+        std::vector<Task> tasks;
         sqlite3_stmt* stmt;
+        const char* sql = "SELECT * FROM tasks;";
 
         if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) == SQLITE_OK) {
             while (sqlite3_step(stmt) == SQLITE_ROW) {
                 int id = sqlite3_column_int(stmt, 0);
-                // id - id из 0 столбца
                 const char* name = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-                // name - название задачи из 1 столбца
                 bool completed = sqlite3_column_int(stmt, 2);
-                // completed - состояние из 2 столбца базы данных
-                tasks.emplace_back(id, name);
-                if (completed) {
-                    tasks.back().execute(); 
-                    mark_task_completed(id);
-                }
+                const char* image = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+
+                Task task(id, name);
+                if (completed) task.execute();
+                task.set_image_filename(image ? image : "");
+                tasks.push_back(task);
             }
-            // завершение задачи
             sqlite3_finalize(stmt);
         }
         return tasks;
@@ -129,146 +120,98 @@ public:
 
 class TaskManager {
 private:
-    Database& database_;
-    std::shared_mutex mtx_; 
-public:
-    TaskManager(Database& database) : database_{database} {}
+    Database& db_;
+    mutable std::shared_mutex mtx_;
 
-    void add_task(const std::string& name) {
-        std::unique_lock lock(mtx_); // уникальное владение
-        database_.add_task(name);
+public:
+    TaskManager(Database& db) : db_(db) {}
+
+    void add_task(const std::string& name, const std::string& image_filename = "") {
+        std::unique_lock lock(mtx_);
+        db_.add_task(name, image_filename);
     }
 
     void complete_task(int id) {
-        std::unique_lock lock(mtx_);  // уникальное владение 
-        database_.mark_task_completed(id);
+        std::unique_lock lock(mtx_);
+        db_.mark_task_completed(id);
     }
 
-    std::vector<Task> get_tasks() {
-        std::shared_lock lock(mtx_);  // разделяемое владение 
-        return database_.get_tasks();
-    }
-};
-
-class UserInterface {
-private:
-    TaskManager& manager_;
-
-public:
-    UserInterface(TaskManager& mgr) : manager_{mgr} {}
-
-    void show_menu() {
-        std::cout << "1. Add Task\n2. Complete Task\n3. Show Tasks\n4. Exit\n";
-        int choice;
-        std::cin >> choice;
-
-        switch (choice) {
-            case 1: {
-                std::string name;
-                std::cout << "Enter task name: ";
-                std::cin >> name;
-                manager_.add_task(name);
-                break;
-            }
-
-            case 2: {
-                int id;
-                std::cout << "Enter task ID to complete: ";
-                std::cin >> id;
-                manager_.complete_task(id);
-                break;
-            }
-
-            case 3: {
-                auto&& tasks = manager_.get_tasks();
-                auto&& print_if_not_empty = [] (const auto& task) {
-                    if (task.get_name().empty()) 
-                        return;
-        
-                    std::cout << "ID: " << task.get_id() << ", Name: " << task.get_name() 
-                              << ", Completed: " << (task.is_completed() ? "Yes" : "No") << std::endl;
-                };
-
-                std::for_each(tasks.begin(), tasks.end(), print_if_not_empty);
-                break;
-            }
-
-            case 4:
-                return; 
-
-            default:
-                std::cout << "Invalid choice!" << std::endl;
-            }
-        
-        show_menu();
+    std::vector<Task> get_tasks() const {
+        std::shared_lock lock(mtx_);
+        return db_.get_tasks();
     }
 };
 
 class WebInterface {
 private:
-    TaskManager& manager_;
-    Server svr_; // экзепмпляр веб-сервера, обрабатывает HTTP запросы 
+    TaskManager& tm_;
+    Server svr_;
 
 public:
-    WebInterface(TaskManager& mgr) : manager_{mgr} {
+    WebInterface(TaskManager& tm) : tm_(tm) {
         setup_routes();
     }
 
-    void run(int port = 8080) { // запускаем сервер на указанном порту 
-        std::cout << "Server running on http://localhost:" << port << std::endl; // ссылка на веб интерфейс 
+    void run(int port = 8080) {
+        std::cout << "Server running on http://localhost:" << port << std::endl;
         svr_.listen("0.0.0.0", port);
     }
 
-    void setup_routes() { // определяем маршруты 
-        // get all tasks
-        svr_.Get("/tasks", [&](const Request& req, Response& res) { 
-            auto tasks = manager_.get_tasks();
-            // json используется для REST API для обмена данными 
-            json j; 
-            for (auto&& task : tasks) {
+private:
+    void setup_routes() {
+        svr_.Get("/tasks", [&](const Request&, Response& res) {
+            auto tasks = tm_.get_tasks();
+            json j;
+            for (const auto& t : tasks) {
                 j.push_back({
-                    {"id", task.get_id()},              // добавляем id 
-                    {"name", task.get_name()},          // добавляем имя 
-                    {"completed", task.is_completed()}  // добавляем состояние задачи 
-                }); // push back добавляем элемент в json массив 
+                    {"id", t.get_id()},
+                    {"name", t.get_name()},
+                    {"completed", t.is_completed()},
+                    {"image_filename", t.get_image_filename()}
+                });
             }
-            res.set_content(j.dump(), "application/json"); // j.dump() - преобразует JSON обьект в строку 
+            res.set_content(j.dump(), "application/json");
         });
 
-        // post task
         svr_.Post("/tasks", [&](const Request& req, Response& res) {
-            auto j = json::parse(req.body); // json.parse(req.body) - парсит строку в JSON обьект 
-            manager_.add_task(j["name"].get<std::string>());
-            res.status = 201; // успешное создание ресурса 
+            auto j = json::parse(req.body);
+            tm_.add_task(
+                j["name"].get<std::string>(),
+                j.value("image_filename", "")
+            );
+            res.status = 201;
         });
 
-        // complete task
-        svr_.Put(R"(/tasks/(\d+))", [&](const Request& req, Response& res) { // первый аргумент - регуляроное выражение 
-            // /tasks/123456 - пример - сопоставляется с URL
+        svr_.Put(R"(/tasks/(\d+))", [&](const Request& req, Response& res) {
             int id = std::stoi(req.matches[1]);
-            manager_.complete_task(id);
+            tm_.complete_task(id);
             res.status = 200;
         });
 
-        svr_.set_mount_point("/", "./static"); // статические файлы 
+        svr_.Post("/upload", [&](const Request& req, Response& res) {
+            const auto& file = req.get_file_value("image");
+            std::string path = "./static/uploads/" + file.filename;
+            
+            std::ofstream ofs(path, std::ios::binary);
+            ofs << file.content;
+            ofs.close();
+
+            json response;
+            response["filename"] = file.filename;
+            res.set_content(response.dump(), "application/json");
+        });
+
+        svr_.set_mount_point("/", "./static");
+        svr_.set_mount_point("/uploads", "./static/uploads");
     }
 };
 
 int main() {
-    Database database("tasks.db");
-    TaskManager manager(database); // гарантирует безопасность относительно многопоточного окружения 
-    // гарантирует безопасность относительно операций добавления, отметки выполнения, чтения списка задач
+    Database db("tasks.db");
+    TaskManager tm(db);
     
-    WebInterface web(manager);
-    // used new thread for web 
-    std::thread web_thread([&web]() {
-        web.run(); // default value 
-    });
-    
-    UserInterface ui(manager);
-    // основная функция главного потока - управление консольным интерфейсом (ui.show_menu())
-    // общий ресурс двух потоков - база данных - файл tasks.db
-    ui.show_menu();
+    WebInterface web(tm);
+    std::thread web_thread([&web] { web.run(); });
     
     web_thread.join();
     return 0;
